@@ -3,17 +3,15 @@ import random
 import json
 from flask import Flask, request
 from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Dispatcher, CommandHandler, CallbackQueryHandler, MessageHandler, filters
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters
 
 TOKEN = "8867087367:AAE5o5px2UU56vDfPmxr-SmSNDzTZXTUODs"
 bot = Bot(token=TOKEN)
-dp = Dispatcher(bot, None, use_context=True)
-
 app = Flask(__name__)
 
 user_sessions = {}
 
-# ========== КЛАВИАТУРЫ И ФУНКЦИИ ==========
+# ========== КЛАВИАТУРЫ ==========
 def get_main_keyboard():
     keyboard = [[InlineKeyboardButton("🎲 Новый розыгрыш", callback_data="new_draw")]]
     return InlineKeyboardMarkup(keyboard)
@@ -23,23 +21,19 @@ def get_action_keyboard():
     return InlineKeyboardMarkup(keyboard)
 
 def parse_participants(text):
-    title = "Розыгрыш"
-    if '|' in text:
-        parts = text.split('|', 1)
-        title = parts[0].strip()
-        text = parts[1].strip()
+    """Превращает текст в список участников"""
     if ',' in text:
         participants = [p.strip() for p in text.split(',') if p.strip()]
     else:
         participants = [p.strip() for p in text.split() if p.strip()]
-    return title, participants
+    return participants
 
 # ========== ОБРАБОТЧИКИ ==========
 async def start(update, context):
     user_id = update.effective_user.id
     user_sessions.pop(user_id, None)
     await update.message.reply_text(
-        "🎡 *Колесо фортуны*\n\nВведите участников через запятую:\n`Аня, Ваня, Маша`\n\nС заявкой: `Приз | Аня, Ваня, Маша`",
+        "🎡 *Колесо фортуны*\n\nНажмите «Новый розыгрыш», чтобы начать.",
         parse_mode="Markdown",
         reply_markup=get_main_keyboard()
     )
@@ -51,53 +45,103 @@ async def handle_callback(update, context):
     data = query.data
 
     if data == "new_draw":
-        user_sessions[user_id] = {"step": "awaiting_participants"}
-        await query.edit_message_text("Введите список участников через запятую:", parse_mode="Markdown")
+        user_sessions[user_id] = {"step": "awaiting_title"}
+        await query.edit_message_text(
+            "🎲 *Шаг 1 из 2*\n\n"
+            "Напишите, *кого разыгрываем?*\n"
+            "Например: *Подарочный сертификат 1000₽*",
+            parse_mode="Markdown"
+        )
 
     elif data == "spin":
         session = user_sessions.get(user_id, {})
         participants = session.get("participants", [])
-        if len(participants) < 2:
-            await query.edit_message_text("❌ Нужно минимум 2 участника.")
-            return
-        winner = random.choice(participants)
         title = session.get("title", "Розыгрыш")
-        text = f"🎉 *РЕЗУЛЬТАТ* 🎉\n\n📌 {title}\n👥 {len(participants)} участников\n\n🏆 *ПОБЕДИТЕЛЬ:* {winner}"
+        
+        if len(participants) < 2:
+            await query.edit_message_text("❌ Нужно минимум 2 участника. Начните новый розыгрыш.")
+            return
+        
+        winner = random.choice(participants)
+        text = f"🎉 *РЕЗУЛЬТАТ РОЗЫГРЫША* 🎉\n\n"
+        text += f"📌 *Заявка:* {title}\n\n"
+        text += f"👥 *Участников:* {len(participants)}\n\n"
+        text += f"🏆 *ПОБЕДИТЕЛЬ:* **{winner}** 🏆\n\n"
+        text += f"Поздравляем! 🎊🎉"
+        
         await query.edit_message_text(text, parse_mode="Markdown")
         user_sessions.pop(user_id, None)
 
 async def handle_text(update, context):
     user_id = update.effective_user.id
     session = user_sessions.get(user_id, {})
-    if session.get("step") != "awaiting_participants":
+    step = session.get("step")
+    
+    if not step:
         await start(update, context)
         return
+    
     text = update.message.text.strip()
-    title, participants = parse_participants(text)
-    if len(participants) < 2:
-        await update.message.reply_text("❌ Нужно минимум 2 участника. Повторите:")
-        return
-    user_sessions[user_id] = {"title": title, "participants": participants}
-    participants_list = "\n".join([f"{i+1}. {p}" for i, p in enumerate(participants)])
-    await update.message.reply_text(
-        f"✅ *Участники ({len(participants)}):*\n{participants_list}\n\nНажмите «Запустить колесо».",
-        parse_mode="Markdown",
-        reply_markup=get_action_keyboard()
-    )
+    
+    if step == "awaiting_title":
+        # Сохраняем заявку
+        session["title"] = text
+        session["step"] = "awaiting_participants"
+        user_sessions[user_id] = session
+        
+        await update.message.reply_text(
+            f"✅ *Заявка:* {text}\n\n"
+            f"🎲 *Шаг 2 из 2*\n\n"
+            f"Введите список участников через запятую:\n"
+            f"`Аня, Ваня, Маша, Ольга`\n\n"
+            f"Имена могут быть любыми — имена, никнеймы, ID.",
+            parse_mode="Markdown"
+        )
+    
+    elif step == "awaiting_participants":
+        # Сохраняем участников
+        participants = parse_participants(text)
+        
+        if len(participants) < 2:
+            await update.message.reply_text(
+                f"❌ Найдено {len(participants)} участников. Нужно минимум 2.\n"
+                f"Повторите ввод через запятую:"
+            )
+            return
+        
+        session["participants"] = participants
+        session["step"] = "ready"
+        user_sessions[user_id] = session
+        
+        title = session.get("title", "Розыгрыш")
+        participants_list = "\n".join([f"{i+1}. {p}" for i, p in enumerate(participants)])
+        
+        result_text = f"✅ *Готово!*\n\n"
+        result_text += f"📌 *Заявка:* {title}\n\n"
+        result_text += f"👥 *Участники ({len(participants)}):*\n{participants_list}\n\n"
+        result_text += f"Нажмите «Запустить колесо», чтобы провести розыгрыш."
+        
+        await update.message.reply_text(
+            result_text,
+            parse_mode="Markdown",
+            reply_markup=get_action_keyboard()
+        )
 
 # ========== НАСТРОЙКА ОБРАБОТЧИКОВ ==========
-dp.add_handler(CommandHandler("start", start))
-dp.add_handler(CallbackQueryHandler(handle_callback, pattern="^(new_draw|spin)$"))
-dp.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+application = Application.builder().token(TOKEN).build()
+application.add_handler(CommandHandler("start", start))
+application.add_handler(CallbackQueryHandler(handle_callback, pattern="^(new_draw|spin)$"))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
 # ========== ВЕБХУК ==========
 @app.route(f"/webhook/{TOKEN}", methods=["POST"])
 def webhook():
     try:
         update = Update.de_json(request.get_json(force=True), bot)
-        dp.process_update(update)
+        application.process_update(update)
         return "ok", 200
     except Exception as e:
+        print(f"Webhook error: {e}")
         return "error", 500
 
 @app.route("/health")
