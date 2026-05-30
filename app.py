@@ -1,13 +1,19 @@
+import os
 import random
 import asyncio
+import threading
+from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters
 
-# Токен бота
+# ========== НАСТРОЙКИ ==========
 TOKEN = "8867087367:AAE5o5px2UU56vDfPmxr-SmSNDzTZXTUODs"
 
-# Хранилище сессий пользователей
+# Хранилище сессий
 user_sessions = {}
+
+# Flask приложение для healthcheck
+flask_app = Flask(__name__)
 
 # ========== КЛАВИАТУРЫ ==========
 def get_main_keyboard():
@@ -58,7 +64,7 @@ def parse_participants(text):
     return title, unique
 
 async def spin_wheel(update, context, draw_data):
-    """Анимация колеса фортуны (упрощённая)"""
+    """Анимация колеса фортуны"""
     query = update.callback_query
     participants = draw_data["participants"]
     winner_index = random.randrange(len(participants))
@@ -189,8 +195,27 @@ async def handle_text(update, context):
     
     await update.message.reply_text(result_text, parse_mode="Markdown", reply_markup=get_action_keyboard())
 
+# ========== FLASK HEALTHCHECK ==========
+@flask_app.route("/")
+def index():
+    return "🎡 Колесо фортуны работает!"
+
+@flask_app.route("/health")
+def health():
+    return "OK", 200
+
+def run_flask():
+    """Запускает Flask сервер в отдельном потоке"""
+    port = int(os.environ.get("PORT", 10000))
+    flask_app.run(host="0.0.0.0", port=port)
+
 # ========== ЗАПУСК ==========
 def main():
+    # Запускаем Flask в отдельном потоке
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    
+    # Запускаем Telegram бота
     application = Application.builder().token(TOKEN).build()
     
     application.add_handler(CommandHandler("start", start))
