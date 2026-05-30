@@ -31,6 +31,7 @@ async def start(update, context):
     user_sessions.pop(user_id, None)
     
     if is_group:
+        # В группе — только сообщение с инструкцией
         await update.message.reply_text(
             "🎡 *Колесо фортуны*\n\n"
             "Для создания розыгрыша напишите мне в [личные сообщения](t.me/fortuna_ab_bot)\n\n"
@@ -39,6 +40,7 @@ async def start(update, context):
         )
         return
     
+    # Личное сообщение
     await update.message.reply_text(
         "🎡 *Колесо фортуны*\n\nНажмите «Новый розыгрыш», чтобы начать.",
         parse_mode="Markdown",
@@ -86,8 +88,12 @@ async def handle_private_text(update, context):
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id
     
-    # Если это группа — игнорируем полностью
-    if chat_id < 0:
+    # Если это не личный чат — игнорируем полностью
+    if chat_id > 0:
+        # Это личный чат (ID положительный)
+        pass
+    else:
+        # Это группа или канал — выходим
         return
     
     session = user_sessions.get(user_id, {})
@@ -147,7 +153,7 @@ def main():
     
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(handle_callback, pattern="^(new_draw|spin)$"))
-    # Важно: обрабатываем ТОЛЬКО личные сообщения
+    # Только личные сообщения (не команды)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, handle_private_text))
     
     print("🚀 Бот Колесо фортуны запущен...")
