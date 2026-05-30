@@ -1,17 +1,13 @@
-import os
 import random
 import asyncio
-from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters
 
-# ========== НАСТРОЙКИ ==========
+# Токен бота
 TOKEN = "8867087367:AAE5o5px2UU56vDfPmxr-SmSNDzTZXTUODs"
 
-# Хранилище сессий
+# Хранилище сессий пользователей
 user_sessions = {}
-
-app = Flask(__name__)
 
 # ========== КЛАВИАТУРЫ ==========
 def get_main_keyboard():
@@ -49,10 +45,9 @@ def parse_participants(text):
     if ',' in participants_text:
         participants = [p.strip() for p in participants_text.split(',') if p.strip()]
     else:
-        participants = [p.strip() for p in participants_text.split('\n') if p.strip()]
-        if not participants and ' ' in participants_text:
-            participants = [p.strip() for p in participants_text.split(' ') if p.strip()]
+        participants = [p.strip() for p in participants_text.split() if p.strip()]
     
+    # Убираем дубликаты
     seen = set()
     unique = []
     for p in participants:
@@ -62,47 +57,22 @@ def parse_participants(text):
     
     return title, unique
 
-async def spin_wheel(chat_id, context, draw_data, message_id=None):
+async def spin_wheel(update, context, draw_data):
+    """Анимация колеса фортуны (упрощённая)"""
+    query = update.callback_query
     participants = draw_data["participants"]
     winner_index = random.randrange(len(participants))
     winner = participants[winner_index]
-    draw_data["winner"] = winner
-    total_spins = random.randint(20, 35)
+    total_spins = random.randint(15, 25)
     
-    if message_id:
-        await context.bot.edit_message_text(
-            "🎡 *Вращаем колесо фортуны...*",
-            chat_id=chat_id,
-            message_id=message_id,
-            parse_mode="Markdown"
-        )
-    else:
-        sent_msg = await context.bot.send_message(
-            chat_id=chat_id,
-            text="🎡 *Вращаем колесо фортуны...*",
-            parse_mode="Markdown"
-        )
-        message_id = sent_msg.message_id
-    
+    # Анимация
     for i in range(total_spins):
         current_index = (winner_index + total_spins - i) % len(participants)
-        progress = int((i + 1) / total_spins * 20)
-        bar = "█" * progress + "░" * (20 - progress)
-        
-        spin_text = f"🎡 *Колесо фортуны*\n\n"
-        spin_text += f"`{bar}`\n\n"
-        spin_text += f"👉 *{participants[current_index]}* 👈"
-        
-        await context.bot.edit_message_text(
-            spin_text,
-            chat_id=chat_id,
-            message_id=message_id,
-            parse_mode="Markdown"
-        )
-        
-        delay = 0.2 - (i / total_spins) * 0.15
-        await asyncio.sleep(max(0.05, delay))
+        spin_text = f"🎡 *Колесо фортуны*\n\n👉 *{participants[current_index]}* 👈"
+        await query.edit_message_text(spin_text, parse_mode="Markdown")
+        await asyncio.sleep(0.1)
     
+    # Финальный результат
     final_text = f"🎉 *РЕЗУЛЬТАТ РОЗЫГРЫША* 🎉\n\n"
     if draw_data.get("title") and draw_data["title"] != "Розыгрыш":
         final_text += f"📌 *Заявка:* {draw_data['title']}\n\n"
@@ -110,13 +80,7 @@ async def spin_wheel(chat_id, context, draw_data, message_id=None):
     final_text += f"🏆 *ПОБЕДИТЕЛЬ:* **{winner}** 🏆\n\n"
     final_text += f"Поздравляем! 🎊🎉"
     
-    await context.bot.edit_message_text(
-        final_text,
-        chat_id=chat_id,
-        message_id=message_id,
-        parse_mode="Markdown",
-        reply_markup=get_result_keyboard()
-    )
+    await query.edit_message_text(final_text, parse_mode="Markdown", reply_markup=get_result_keyboard())
 
 # ========== ОБРАБОТЧИКИ ==========
 async def start(update, context):
@@ -125,17 +89,15 @@ async def start(update, context):
     
     welcome_text = """🎡 *Колесо фортуны*
 
-Я провожу розыгрыши с анимацией колеса!
+Я провожу розыгрыши с анимацией!
 
 *Как использовать:*
 1️⃣ Нажмите «Новый розыгрыш»
 2️⃣ Напишите список участников
 3️⃣ Запустите колесо!
 
-*Пример списка:* `Аня, Ваня, Маша`
-*С заявкой:* `Приз | Аня, Ваня, Маша`
-
-Нажмите кнопку ниже 👇"""
+*Пример:* `Аня, Ваня, Маша`
+*С заявкой:* `Приз | Аня, Ваня, Маша`"""
     
     await update.message.reply_text(welcome_text, parse_mode="Markdown", reply_markup=get_main_keyboard())
 
@@ -150,27 +112,21 @@ async def handle_callback(update, context):
         user_sessions[user_id] = {"step": "awaiting_participants"}
         await query.edit_message_text(
             "🎲 *Новый розыгрыш*\n\n"
-            "Напишите список участников:\n\n"
-            "• Через запятую: `Аня, Ваня, Маша`\n"
-            "• Через пробел: `Аня Ваня Маша`\n\n"
-            "С заявкой: `Подарочный сертификат | Аня, Ваня, Маша`",
+            "Напишите список участников:\n"
+            "• Через запятую: `Аня, Ваня, Маша`\n\n"
+            "С заявкой: `Приз | Аня, Ваня, Маша`",
             parse_mode="Markdown"
         )
     
     elif data == "howto":
-        howto_text = """ℹ️ *Как пользоваться ботом*
-
-1. Нажмите «Новый розыгрыш»
-2. Введите список участников
-3. Нажмите «Запустить колесо»
-
-*Форматы ввода:*
-• `Аня, Ваня, Маша`
-• `Аня Ваня Маша`
-
-*С заявкой:* `Приз | Аня, Ваня, Маша`"""
-        
-        await query.edit_message_text(howto_text, parse_mode="Markdown", reply_markup=get_main_keyboard())
+        await query.edit_message_text(
+            "ℹ️ *Как пользоваться*\n\n"
+            "1. Нажмите «Новый розыгрыш»\n"
+            "2. Введите список участников\n"
+            "3. Запустите колесо",
+            parse_mode="Markdown",
+            reply_markup=get_main_keyboard()
+        )
     
     elif data == "spin":
         session = user_sessions.get(user_id, {})
@@ -188,11 +144,15 @@ async def handle_callback(update, context):
             "participants": participants
         }
         
-        asyncio.create_task(spin_wheel(query.message.chat_id, context, draw_data, query.message.message_id))
+        await spin_wheel(update, context, draw_data)
     
     elif data == "edit":
         user_sessions[user_id] = {"step": "awaiting_participants"}
-        await query.edit_message_text("✏️ Напишите новый список участников:", parse_mode="Markdown")
+        await query.edit_message_text(
+            "✏️ *Редактирование участников*\n\n"
+            "Напишите новый список участников:",
+            parse_mode="Markdown"
+        )
     
     elif data == "cancel":
         user_sessions.pop(user_id, None)
@@ -210,7 +170,9 @@ async def handle_text(update, context):
     title, participants = parse_participants(text)
     
     if len(participants) < 2:
-        await update.message.reply_text(f"❌ Найдено {len(participants)} участников. Нужно минимум 2.\nПовторите ввод:")
+        await update.message.reply_text(
+            f"❌ Найдено {len(participants)} участников. Нужно минимум 2.\nПовторите ввод:"
+        )
         return
     
     session["title"] = title
@@ -218,9 +180,7 @@ async def handle_text(update, context):
     session["step"] = "ready"
     user_sessions[user_id] = session
     
-    participants_list = "\n".join([f"{i+1}. {p}" for i, p in enumerate(participants[:20])])
-    if len(participants) > 20:
-        participants_list += f"\n... и ещё {len(participants) - 20}"
+    participants_list = "\n".join([f"{i+1}. {p}" for i, p in enumerate(participants)])
     
     result_text = f"✅ *Участники ({len(participants)} чел.):*\n{participants_list}\n\n"
     if title != "Розыгрыш":
@@ -229,27 +189,7 @@ async def handle_text(update, context):
     
     await update.message.reply_text(result_text, parse_mode="Markdown", reply_markup=get_action_keyboard())
 
-# ========== ДЛЯ RENDER ==========
-@app.route("/health")
-def health():
-    return "OK", 200
-
-@app.route("/")
-def index():
-    return "🎡 Колесо фортуны работает!"
-
-def setup_webhook():
-    render_url = os.environ.get("RENDER_EXTERNAL_URL")
-    if not render_url:
-        print("⚠️ RENDER_EXTERNAL_URL не найден")
-        return
-    
-    from telegram import Bot
-    bot = Bot(token=TOKEN)
-    webhook_url = f"{render_url}/webhook/{TOKEN}"
-    bot.set_webhook(webhook_url)
-    print(f"✅ Webhook установлен: {webhook_url}")
-
+# ========== ЗАПУСК ==========
 def main():
     application = Application.builder().token(TOKEN).build()
     
@@ -257,10 +197,8 @@ def main():
     application.add_handler(CallbackQueryHandler(handle_callback))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     
-    setup_webhook()
-    
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    print("🚀 Бот Колесо фортуны запущен...")
+    application.run_polling()
 
 if __name__ == "__main__":
     main()
