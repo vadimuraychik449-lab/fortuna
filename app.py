@@ -3,7 +3,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters
 
 TOKEN = "8867087367:AAE5o5px2UU56vDfPmxr-SmSNDzTZXTUODs"
-GROUP_CHAT_ID = -1004161930401  # ⚠️ ЗАМЕНИТЕ НА РЕАЛЬНЫЙ ID ГРУППЫ
+GROUP_CHAT_ID = 4161930401  # ⚠️ ЗАМЕНИТЕ НА РЕАЛЬНЫЙ ID ГРУППЫ
 
 user_sessions = {}
 
