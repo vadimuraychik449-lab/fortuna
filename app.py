@@ -1,4 +1,3 @@
-import os
 import random
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters
@@ -7,7 +6,6 @@ TOKEN = "8867087367:AAE5o5px2UU56vDfPmxr-SmSNDzTZXTUODs"
 
 user_sessions = {}
 
-# ========== КЛАВИАТУРЫ ==========
 def get_main_keyboard():
     keyboard = [[InlineKeyboardButton("🎲 Новый розыгрыш", callback_data="new_draw")]]
     return InlineKeyboardMarkup(keyboard)
@@ -17,14 +15,12 @@ def get_action_keyboard():
     return InlineKeyboardMarkup(keyboard)
 
 def parse_participants(text):
-    """Превращает текст в список участников"""
     if ',' in text:
         participants = [p.strip() for p in text.split(',') if p.strip()]
     else:
         participants = [p.strip() for p in text.split() if p.strip()]
     return participants
 
-# ========== ОБРАБОТЧИКИ ==========
 async def start(update, context):
     user_id = update.effective_user.id
     user_sessions.pop(user_id, None)
@@ -59,11 +55,11 @@ async def handle_callback(update, context):
             return
         
         winner = random.choice(participants)
-        text = f"🎉 *РЕЗУЛЬТАТ РОЗЫГРЫША* 🎉\n\n"
-        text += f"📌 *Заявка:* {title}\n\n"
-        text += f"👥 *Участников:* {len(participants)}\n\n"
-        text += f"🏆 *ПОБЕДИТЕЛЬ:* **{winner}** 🏆\n\n"
-        text += f"Поздравляем! 🎊🎉"
+        text = (f"🎉 *РЕЗУЛЬТАТ РОЗЫГРЫША* 🎉\n\n"
+                f"📌 *Заявка:* {title}\n\n"
+                f"👥 *Участников:* {len(participants)}\n\n"
+                f"🏆 *ПОБЕДИТЕЛЬ:* **{winner}** 🏆\n\n"
+                f"Поздравляем! 🎊🎉")
         
         await query.edit_message_text(text, parse_mode="Markdown")
         user_sessions.pop(user_id, None)
@@ -110,10 +106,10 @@ async def handle_text(update, context):
         title = session.get("title", "Розыгрыш")
         participants_list = "\n".join([f"{i+1}. {p}" for i, p in enumerate(participants)])
         
-        result_text = f"✅ *Готово!*\n\n"
-        result_text += f"📌 *Заявка:* {title}\n\n"
-        result_text += f"👥 *Участники ({len(participants)}):*\n{participants_list}\n\n"
-        result_text += f"Нажмите «Запустить колесо», чтобы провести розыгрыш."
+        result_text = (f"✅ *Готово!*\n\n"
+                       f"📌 *Заявка:* {title}\n\n"
+                       f"👥 *Участники ({len(participants)}):*\n{participants_list}\n\n"
+                       f"Нажмите «Запустить колесо», чтобы провести розыгрыш.")
         
         await update.message.reply_text(
             result_text,
@@ -121,7 +117,6 @@ async def handle_text(update, context):
             reply_markup=get_action_keyboard()
         )
 
-# ========== ЗАПУСК ==========
 def main():
     application = Application.builder().token(TOKEN).build()
     
