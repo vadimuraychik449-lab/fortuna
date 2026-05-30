@@ -58,9 +58,13 @@ async def handle_callback(update, context):
             return
         
         winner = random.choice(participants)
+        
+        # Формируем список участников
+        participants_list = "\n".join([f"• {p}" for p in participants])
+        
         text = f"🎉 *РЕЗУЛЬТАТ РОЗЫГРЫША* 🎉\n\n"
         text += f"📌 *Заявка:* {title}\n\n"
-        text += f"👥 *Участников:* {len(participants)}\n\n"
+        text += f"👥 *Участники:*\n{participants_list}\n\n"
         text += f"🏆 *ПОБЕДИТЕЛЬ:* **{winner}** 🏆\n\n"
         text += f"Поздравляем! 🎊🎉"
         
