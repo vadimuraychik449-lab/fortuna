@@ -1,14 +1,8 @@
-import os
 import random
-import asyncio
-import threading
-from flask import Flask, request
-from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters
 
 TOKEN = "8867087367:AAE5o5px2UU56vDfPmxr-SmSNDzTZXTUODs"
-bot = Bot(token=TOKEN)
-app = Flask(__name__)
 
 user_sessions = {}
 
@@ -127,44 +121,16 @@ async def handle_text(update, context):
             reply_markup=get_action_keyboard()
         )
 
-# ========== НАСТРОЙКА ОБРАБОТЧИКОВ ==========
-application = Application.builder().token(TOKEN).build()
-application.add_handler(CommandHandler("start", start))
-application.add_handler(CallbackQueryHandler(handle_callback, pattern="^(new_draw|spin)$"))
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-
-# ========== FLASK (ЗАПУСКАЕТ ПРОЦЕССОР В ПОТОКЕ) ==========
-def process_update_async(update_data):
-    """Запускает асинхронную обработку в отдельном цикле"""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        update = Update.de_json(update_data, bot)
-        loop.run_until_complete(application.process_update(update))
-    except Exception as e:
-        print(f"Processing error: {e}")
-    finally:
-        loop.close()
-
-@app.route(f"/webhook/{TOKEN}", methods=["POST"])
-def webhook():
-    try:
-        update_data = request.get_json(force=True)
-        # Запускаем обработку в фоновом потоке
-        threading.Thread(target=process_update_async, args=(update_data,)).start()
-        return "ok", 200
-    except Exception as e:
-        print(f"Webhook error: {e}")
-        return "error", 500
-
-@app.route("/health")
-def health():
-    return "OK", 200
-
-@app.route("/")
-def index():
-    return "🎡 Колесо фортуны работает!"
+# ========== ЗАПУСК ==========
+def main():
+    application = Application.builder().token(TOKEN).build()
+    
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CallbackQueryHandler(handle_callback, pattern="^(new_draw|spin)$"))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    
+    print("🚀 Бот Колесо фортуны запущен...")
+    application.run_polling()
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    main()
