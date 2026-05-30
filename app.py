@@ -25,7 +25,20 @@ def parse_participants(text):
 # ========== ОБРАБОТЧИКИ ==========
 async def start(update, context):
     user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+    is_group = chat_id < 0
+    
     user_sessions.pop(user_id, None)
+    
+    if is_group:
+        await update.message.reply_text(
+            "🎡 *Колесо фортуны*\n\n"
+            "Для создания розыгрыша напишите мне в [личные сообщения](t.me/fortuna_ab_bot)\n\n"
+            "После создания розыгрыша нажмите «Запустить колесо» здесь.",
+            parse_mode="Markdown"
+        )
+        return
+    
     await update.message.reply_text(
         "🎡 *Колесо фортуны*\n\nНажмите «Новый розыгрыш», чтобы начать.",
         parse_mode="Markdown",
@@ -70,9 +83,19 @@ async def handle_callback(update, context):
 
 async def handle_text(update, context):
     user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+    is_group = chat_id < 0
+    
     session = user_sessions.get(user_id, {})
     step = session.get("step")
     
+    # В группе — только команда /start
+    if is_group:
+        if update.message and update.message.text == "/start":
+            await start(update, context)
+        return
+    
+    # Личные сообщения
     if not step:
         await start(update, context)
         return
