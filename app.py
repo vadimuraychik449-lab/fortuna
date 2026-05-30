@@ -1,11 +1,15 @@
+import os
 import random
+import threading
+from flask import Flask
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters
 
 TOKEN = "8867087367:AAE5o5px2UU56vDfPmxr-SmSNDzTZXTUODs"
-GROUP_CHAT_ID = 4161930401  # ВАШ ID ГРУППЫ (БЕЗ МИНУСА)
+GROUP_CHAT_ID = 4161930401
 
 user_sessions = {}
+flask_app = Flask(__name__)
 
 # ========== КЛАВИАТУРЫ ==========
 def get_main_keyboard():
@@ -18,10 +22,8 @@ def get_action_keyboard():
 
 def parse_participants(text):
     if ',' in text:
-        participants = [p.strip() for p in text.split(',') if p.strip()]
-    else:
-        participants = [p.strip() for p in text.split() if p.strip()]
-    return participants
+        return [p.strip() for p in text.split(',') if p.strip()]
+    return [p.strip() for p in text.split() if p.strip()]
 
 # ========== ОТПРАВКА В ГРУППУ ==========
 async def send_to_group(context, title, participants, winner):
@@ -37,7 +39,7 @@ async def send_to_group(context, title, participants, winner):
         await context.bot.send_message(chat_id=GROUP_CHAT_ID, text=message, parse_mode="Markdown")
         return True
     except Exception as e:
-        print(f"Ошибка: {e}")
+        print(f"Ошибка отправки в группу: {e}")
         return False
 
 # ========== ОБРАБОТЧИКИ ==========
@@ -90,8 +92,6 @@ async def handle_callback(update, context):
             return
         
         winner = random.choice(participants)
-        
-        # Отправляем в группу
         success = await send_to_group(context, title, participants, winner)
         
         if success:
@@ -134,24 +134,18 @@ async def handle_private_text(update, context):
         session["title"] = text
         session["step"] = "awaiting_participants"
         user_sessions[user_id] = session
-        
         await update.message.reply_text(
             f"✅ *Заявка:* {text}\n\n"
             f"🎲 *Шаг 2 из 2*\n\n"
             f"Введите список участников через запятую:\n"
-            f"`Аня, Ваня, Маша, Ольга`\n\n"
-            f"Имена могут быть любыми — имена, никнеймы, ID.",
+            f"`Аня, Ваня, Маша, Ольга`",
             parse_mode="Markdown"
         )
     
     elif step == "awaiting_participants":
         participants = parse_participants(text)
-        
         if len(participants) < 2:
-            await update.message.reply_text(
-                f"❌ Найдено {len(participants)} участников. Нужно минимум 2.\n"
-                f"Повторите ввод через запятую:"
-            )
+            await update.message.reply_text("❌ Нужно минимум 2 участника. Повторите ввод через запятую:")
             return
         
         session["participants"] = participants
@@ -160,31 +154,40 @@ async def handle_private_text(update, context):
         
         title = session.get("title", "Розыгрыш")
         participants_list = "\n".join([f"{i+1}. {p}" for i, p in enumerate(participants)])
-        
-        result_text = (
+        await update.message.reply_text(
             f"✅ *Готово!*\n\n"
             f"📌 *Заявка:* {title}\n\n"
             f"👥 *Участники ({len(participants)}):*\n{participants_list}\n\n"
             f"Нажмите «Запустить колесо», чтобы провести розыгрыш.\n\n"
-            f"Результат автоматически отправится в группу."
-        )
-        
-        await update.message.reply_text(
-            result_text,
+            f"Результат автоматически отправится в группу.",
             parse_mode="Markdown",
             reply_markup=get_action_keyboard()
         )
 
+# ========== FLASK ДЛЯ RENDER ==========
+@flask_app.route("/")
+def index():
+    return "🎡 Колесо фортуны работает!"
+
+@flask_app.route("/health")
+def health():
+    return "OK", 200
+
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    flask_app.run(host="0.0.0.0", port=port)
+
 # ========== ЗАПУСК ==========
 def main():
-    application = Application.builder().token(TOKEN).build()
+    # Запускаем Flask в отдельном потоке
+    threading.Thread(target=run_flask, daemon=True).start()
     
+    application = Application.builder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(handle_callback, pattern="^(new_draw|spin)$"))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, handle_private_text))
     
-    print("🚀 Бот Колесо фортуны запущен...")
-    print(f"📢 Результаты будут отправляться в группу с ID: {GROUP_CHAT_ID}")
+    print("🚀 Бот запущен...")
     application.run_polling()
 
 if __name__ == "__main__":
