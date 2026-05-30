@@ -1,8 +1,12 @@
+import os
 import random
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from flask import Flask, request
+from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters
 
 TOKEN = "8867087367:AAE5o5px2UU56vDfPmxr-SmSNDzTZXTUODs"
+bot = Bot(token=TOKEN)
+app = Flask(__name__)
 
 user_sessions = {}
 
@@ -16,7 +20,6 @@ def get_action_keyboard():
     return InlineKeyboardMarkup(keyboard)
 
 def parse_participants(text):
-    """Превращает текст в список участников"""
     if ',' in text:
         participants = [p.strip() for p in text.split(',') if p.strip()]
     else:
@@ -58,8 +61,6 @@ async def handle_callback(update, context):
             return
         
         winner = random.choice(participants)
-        
-        # Формируем список участников
         participants_list = "\n".join([f"• {p}" for p in participants])
         
         text = f"🎉 *РЕЗУЛЬТАТ РОЗЫГРЫША* 🎉\n\n"
@@ -124,16 +125,31 @@ async def handle_text(update, context):
             reply_markup=get_action_keyboard()
         )
 
-# ========== ЗАПУСК ==========
-def main():
-    application = Application.builder().token(TOKEN).build()
-    
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CallbackQueryHandler(handle_callback, pattern="^(new_draw|spin)$"))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-    
-    print("🚀 Бот Колесо фортуны запущен...")
-    application.run_polling()
+# ========== FLASK (HEALTHCHECK + WEBHOOK) ==========
+application = Application.builder().token(TOKEN).build()
+application.add_handler(CommandHandler("start", start))
+application.add_handler(CallbackQueryHandler(handle_callback, pattern="^(new_draw|spin)$"))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+
+@app.route(f"/webhook/{TOKEN}", methods=["POST"])
+def webhook():
+    try:
+        update = Update.de_json(request.get_json(force=True), bot)
+        application.process_update(update)
+        return "ok", 200
+    except Exception as e:
+        print(f"Webhook error: {e}")
+        return "error", 500
+
+# ЭТОТ URL НУЖНО УКАЗАТЬ В UPTIMEROBOT 👇
+@app.route("/health")
+def health():
+    return "OK", 200
+
+@app.route("/")
+def index():
+    return "🎡 Колесо фортуны работает!"
 
 if __name__ == "__main__":
-    main()
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
