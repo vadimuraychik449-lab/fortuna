@@ -8,9 +8,11 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 TOKEN = "8867087367:AAE5o5px2UU56vDfPmxr-SmSNDzTZXTUODs"
 GROUP_CHAT_ID = -4161930401
 
-# Списки участников по умолчанию
-SHIFT_1 = ["Расоян", "Шайкин", "Терехов", "Купаев", "Макаров", "Иевский"]
-SHIFT_2 = ["Борисов", "Марасанов", "Самигулин", "Гранаткин", "Рыжков"]
+# ОБЩИЙ СПИСОК УЧАСТНИКОВ
+ALL_USERS = [
+    "Расоян", "Шайкин", "Терехов", "Купаев", "Макаров", "Иевский",
+    "Борисов", "Марасанов", "Самигулин", "Гранаткин", "Рыжков"
+]
 
 user_sessions = {}
 flask_app = Flask(__name__)
@@ -24,23 +26,15 @@ def get_action_keyboard():
     keyboard = [[InlineKeyboardButton("🎡 Запустить колесо", callback_data="spin")]]
     return InlineKeyboardMarkup(keyboard)
 
-def get_shift_keyboard():
-    keyboard = [
-        [InlineKeyboardButton("🟢 1 смена", callback_data="show_shift_1")],
-        [InlineKeyboardButton("🔵 2 смена", callback_data="show_shift_2")],
-        [InlineKeyboardButton("✏️ Ввести вручную", callback_data="manual_input")],
-        [InlineKeyboardButton("◀️ Назад", callback_data="back_to_main")]
-    ]
-    return InlineKeyboardMarkup(keyboard)
-
 def get_select_keyboard(users, selected):
     """Клавиатура для выбора участников с галочками"""
     keyboard = []
     for user in users:
         status = "✅ " if user in selected else "☑️ "
         keyboard.append([InlineKeyboardButton(f"{status}{user}", callback_data=f"toggle_{user}")])
+    keyboard.append([InlineKeyboardButton("➕ Добавить участника", callback_data="add_user")])
     keyboard.append([InlineKeyboardButton("✅ Готово", callback_data="selection_done")])
-    keyboard.append([InlineKeyboardButton("◀️ Отмена", callback_data="cancel_selection")])
+    keyboard.append([InlineKeyboardButton("◀️ Отмена", callback_data="cancel")])
     return InlineKeyboardMarkup(keyboard)
 
 def parse_participants(text):
@@ -96,17 +90,19 @@ async def handle_callback(update, context):
     user_id = query.from_user.id
     data = query.data
 
-    # НОВЫЙ РОЗЫГРЫШ — показываем выбор смены
+    # НОВЫЙ РОЗЫГРЫШ — показываем список участников
     if data == "new_draw":
         user_sessions[user_id] = {"selected": []}
         await query.edit_message_text(
-            "🎲 *Новый розыгрыш*\n\n"
-            "Выберите смену или введите участников вручную:",
+            "👥 *Выберите участников розыгрыша:*\n\n"
+            "Нажимайте на имена, чтобы отметить галочкой.\n"
+            "Можно добавить участника вручную.\n\n"
+            "Когда закончите, нажмите «Готово».",
             parse_mode="Markdown",
-            reply_markup=get_shift_keyboard()
+            reply_markup=get_select_keyboard(ALL_USERS, [])
         )
     
-    elif data == "back_to_main":
+    elif data == "cancel":
         user_sessions.pop(user_id, None)
         await query.edit_message_text(
             "🎡 *Колесо фортуны*\n\n"
@@ -115,30 +111,18 @@ async def handle_callback(update, context):
             reply_markup=get_main_keyboard()
         )
     
-    # ПОКАЗАТЬ 1 СМЕНУ ДЛЯ ВЫБОРА
-    elif data == "show_shift_1":
+    # ДОБАВИТЬ УЧАСТНИКА ВРУЧНУЮ
+    elif data == "add_user":
         session = user_sessions.get(user_id, {})
-        session["shift_users"] = SHIFT_1
-        session["selected"] = session.get("selected", [])
+        session["adding_user"] = True
         user_sessions[user_id] = session
         await query.edit_message_text(
-            f"👥 *1 смена — выберите участников:*\n\n"
-            f"Нажимайте на имена, чтобы отметить. Когда закончите, нажмите «Готово».",
-            parse_mode="Markdown",
-            reply_markup=get_select_keyboard(SHIFT_1, session["selected"])
-        )
-    
-    # ПОКАЗАТЬ 2 СМЕНУ ДЛЯ ВЫБОРА
-    elif data == "show_shift_2":
-        session = user_sessions.get(user_id, {})
-        session["shift_users"] = SHIFT_2
-        session["selected"] = session.get("selected", [])
-        user_sessions[user_id] = session
-        await query.edit_message_text(
-            f"👥 *2 смена — выберите участников:*\n\n"
-            f"Нажимайте на имена, чтобы отметить. Когда закончите, нажмите «Готово».",
-            parse_mode="Markdown",
-            reply_markup=get_select_keyboard(SHIFT_2, session["selected"])
+            "✏️ *Добавление участника*\n\n"
+            "Напишите имя участника, которого хотите добавить.\n\n"
+            "Можно добавить нескольких через запятую:\n"
+            "`Иванов, Петров, Сидоров`\n\n"
+            "После добавления вернётесь к выбору.",
+            parse_mode="Markdown"
         )
     
     # ПЕРЕКЛЮЧЕНИЕ ГАЛОЧКИ (выбрать/убрать участника)
@@ -146,7 +130,6 @@ async def handle_callback(update, context):
         user_name = data.replace("toggle_", "")
         session = user_sessions.get(user_id, {})
         selected = session.get("selected", [])
-        shift_users = session.get("shift_users", [])
         
         if user_name in selected:
             selected.remove(user_name)
@@ -155,7 +138,7 @@ async def handle_callback(update, context):
         
         session["selected"] = selected
         user_sessions[user_id] = session
-        await query.edit_message_reply_markup(reply_markup=get_select_keyboard(shift_users, selected))
+        await query.edit_message_reply_markup(reply_markup=get_select_keyboard(ALL_USERS, selected))
     
     # ВЫБОР ЗАВЕРШЁН — переходим к вводу заявки
     elif data == "selection_done":
@@ -177,29 +160,6 @@ async def handle_callback(update, context):
             f"🎲 *Шаг 1 из 2*\n\n"
             f"Напишите, *кого разыгрываем?*\n"
             f"Например: *ИП Иванов*",
-            parse_mode="Markdown"
-        )
-    
-    elif data == "cancel_selection":
-        session = user_sessions.get(user_id, {})
-        session["selected"] = []
-        user_sessions[user_id] = session
-        await query.edit_message_text(
-            "❌ Выбор отменён.\n\n"
-            "Выберите смену или введите вручную:",
-            reply_markup=get_shift_keyboard()
-        )
-    
-    # РУЧНОЙ ВВОД
-    elif data == "manual_input":
-        session = user_sessions.get(user_id, {})
-        session["step"] = "awaiting_title"
-        user_sessions[user_id] = session
-        await query.edit_message_text(
-            "🎲 *Ручной ввод*\n\n"
-            "*Шаг 1 из 2*\n\n"
-            "Напишите, *кого разыгрываем?*\n"
-            "Например: *ИП Иванов*",
             parse_mode="Markdown"
         )
     
@@ -238,7 +198,7 @@ async def handle_callback(update, context):
             )
         user_sessions.pop(user_id, None)
 
-# ========== ОБРАБОТКА РУЧНОГО ВВОДА ==========
+# ========== ОБРАБОТКА ТЕКСТА (добавление участника + ручной ввод заявки) ==========
 async def handle_private_text(update, context):
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id
@@ -247,6 +207,36 @@ async def handle_private_text(update, context):
         return
     
     session = user_sessions.get(user_id, {})
+    
+    # Режим добавления участника
+    if session.get("adding_user"):
+        text = update.message.text.strip()
+        new_users = parse_participants(text)
+        
+        if not new_users:
+            await update.message.reply_text("❌ Не удалось распознать имя. Попробуйте ещё раз.")
+            return
+        
+        session["adding_user"] = False
+        selected = session.get("selected", [])
+        
+        for u in new_users:
+            if u not in selected and u not in ALL_USERS:
+                selected.append(u)
+            elif u in ALL_USERS and u not in selected:
+                selected.append(u)
+        
+        session["selected"] = selected
+        user_sessions[user_id] = session
+        
+        await update.message.reply_text(
+            f"✅ Добавлено: {', '.join(new_users)}\n\n"
+            f"Продолжите выбор участников.",
+            parse_mode="Markdown",
+            reply_markup=get_select_keyboard(ALL_USERS, selected)
+        )
+        return
+    
     step = session.get("step")
     
     if not step:
@@ -258,50 +248,14 @@ async def handle_private_text(update, context):
     # Шаг 1: ввод заявки
     if step == "awaiting_title":
         session["title"] = text
-        
-        # Если участники уже выбраны (из смены) — сразу показываем готово
-        if "participants" in session and session["participants"]:
-            session["step"] = "ready"
-            user_sessions[user_id] = session
-            participants = session["participants"]
-            participants_list = "\n".join([f"{i+1}. {p}" for i, p in enumerate(participants)])
-            await update.message.reply_text(
-                f"✅ *Готово!*\n\n"
-                f"📌 *Заявка:* {text}\n\n"
-                f"👥 *Участники ({len(participants)}):*\n{participants_list}\n\n"
-                f"Нажмите «Запустить колесо», чтобы провести розыгрыш.\n\n"
-                f"Результат автоматически отправится в группу.",
-                parse_mode="Markdown",
-                reply_markup=get_action_keyboard()
-            )
-        else:
-            # Участников ещё нет — переходим к их вводу
-            session["step"] = "awaiting_participants"
-            user_sessions[user_id] = session
-            await update.message.reply_text(
-                f"✅ *Заявка:* {text}\n\n"
-                f"🎲 *Шаг 2 из 2*\n\n"
-                f"Введите список участников через запятую:\n"
-                f"`Расоян, Шайкин, Терехов`",
-                parse_mode="Markdown"
-            )
-    
-    # Шаг 2: ввод участников вручную
-    elif step == "awaiting_participants":
-        participants = parse_participants(text)
-        if len(participants) < 2:
-            await update.message.reply_text("❌ Нужно минимум 2 участника. Повторите ввод через запятую:")
-            return
-        
-        session["participants"] = participants
         session["step"] = "ready"
         user_sessions[user_id] = session
         
-        title = session.get("title", "Розыгрыш")
+        participants = session.get("participants", [])
         participants_list = "\n".join([f"{i+1}. {p}" for i, p in enumerate(participants)])
         await update.message.reply_text(
             f"✅ *Готово!*\n\n"
-            f"📌 *Заявка:* {title}\n\n"
+            f"📌 *Заявка:* {text}\n\n"
             f"👥 *Участники ({len(participants)}):*\n{participants_list}\n\n"
             f"Нажмите «Запустить колесо», чтобы провести розыгрыш.\n\n"
             f"Результат автоматически отправится в группу.",
@@ -332,8 +286,7 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, handle_private_text))
     
     print("🚀 Бот Колесо фортуны запущен...")
-    print(f"📢 1 смена: {SHIFT_1}")
-    print(f"📢 2 смена: {SHIFT_2}")
+    print(f"📢 Общий список участников: {len(ALL_USERS)} человек")
     application.run_polling()
 
 if __name__ == "__main__":
