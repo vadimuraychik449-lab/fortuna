@@ -6,7 +6,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters
 
 TOKEN = "8867087367:AAE5o5px2UU56vDfPmxr-SmSNDzTZXTUODs"
-GROUP_CHAT_ID = -4161930401
+GROUP_CHAT_ID = -1001728921242
 
 user_sessions = {}
 flask_app = Flask(__name__)
