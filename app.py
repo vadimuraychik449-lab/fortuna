@@ -81,21 +81,18 @@ async def handle_callback(update, context):
         await query.edit_message_text(text, parse_mode="Markdown")
         user_sessions.pop(user_id, None)
 
-async def handle_text(update, context):
+# ========== ОБРАБОТЧИК ТОЛЬКО ДЛЯ ЛИЧНЫХ СООБЩЕНИЙ ==========
+async def handle_private_text(update, context):
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id
-    is_group = chat_id < 0
+    
+    # Если это группа — игнорируем полностью
+    if chat_id < 0:
+        return
     
     session = user_sessions.get(user_id, {})
     step = session.get("step")
     
-    # В группе — только команда /start
-    if is_group:
-        if update.message and update.message.text == "/start":
-            await start(update, context)
-        return
-    
-    # Личные сообщения
     if not step:
         await start(update, context)
         return
@@ -150,7 +147,8 @@ def main():
     
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(handle_callback, pattern="^(new_draw|spin)$"))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    # Важно: обрабатываем ТОЛЬКО личные сообщения
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, handle_private_text))
     
     print("🚀 Бот Колесо фортуны запущен...")
     application.run_polling()
