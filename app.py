@@ -1,13 +1,9 @@
 import os
 import random
-import json
-from flask import Flask, request
-from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters
 
 TOKEN = "8867087367:AAE5o5px2UU56vDfPmxr-SmSNDzTZXTUODs"
-bot = Bot(token=TOKEN)
-app = Flask(__name__)
 
 user_sessions = {}
 
@@ -84,7 +80,6 @@ async def handle_text(update, context):
     text = update.message.text.strip()
     
     if step == "awaiting_title":
-        # Сохраняем заявку
         session["title"] = text
         session["step"] = "awaiting_participants"
         user_sessions[user_id] = session
@@ -99,7 +94,6 @@ async def handle_text(update, context):
         )
     
     elif step == "awaiting_participants":
-        # Сохраняем участников
         participants = parse_participants(text)
         
         if len(participants) < 2:
@@ -127,31 +121,16 @@ async def handle_text(update, context):
             reply_markup=get_action_keyboard()
         )
 
-# ========== НАСТРОЙКА ОБРАБОТЧИКОВ ==========
-application = Application.builder().token(TOKEN).build()
-application.add_handler(CommandHandler("start", start))
-application.add_handler(CallbackQueryHandler(handle_callback, pattern="^(new_draw|spin)$"))
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-
-# ========== ВЕБХУК ==========
-@app.route(f"/webhook/{TOKEN}", methods=["POST"])
-def webhook():
-    try:
-        update = Update.de_json(request.get_json(force=True), bot)
-        application.process_update(update)
-        return "ok", 200
-    except Exception as e:
-        print(f"Webhook error: {e}")
-        return "error", 500
-
-@app.route("/health")
-def health():
-    return "OK", 200
-
-@app.route("/")
-def index():
-    return "🎡 Колесо фортуны работает!"
+# ========== ЗАПУСК ==========
+def main():
+    application = Application.builder().token(TOKEN).build()
+    
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CallbackQueryHandler(handle_callback, pattern="^(new_draw|spin)$"))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    
+    print("🚀 Бот Колесо фортуны запущен...")
+    application.run_polling()
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    main()
